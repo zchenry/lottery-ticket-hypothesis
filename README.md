@@ -26,3 +26,18 @@ H 6: DB 0.97, ZL 0.00
 H 4: DB 0.89, ZL 0.00
 H 2: DB 0.75, ZL 0.00
 ```
+
+#### MNIST
+`python mnist.py --percent 40 40 --iter 50000 --minacc 1e-3 --patient 5`
+
+- percent: Percentage list to shrink.
+- iter: Number of iterations.
+- minacc: Minimal change of accuracy for early stopping.
+- patient: Counts to stop.
+
+One result of the above command is below.
+```
+100%: ITER 1534, TIME 6.62s, ACC 0.9418000983
+60%: ITER 1170, TIME 4.70s, ACC 0.9338000821
+36%: ITER 1612, TIME 6.42s, ACC 0.9429000020
+```
