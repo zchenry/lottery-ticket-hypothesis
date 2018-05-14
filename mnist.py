@@ -123,12 +123,26 @@ def prune(ws, p):
     ws[np.abs(ws) < pivot] = 0.
     return ws
 
+def plot_weights(weights, percent):
+    def plot_weight(key):
+        data = weights[key]
+        data = np.extract(data != 0, data)
+        y, xs = np.histogram(data, bins=100)
+        xs = 0.5 * (xs[1:] + xs[:-1])
+        plt.plot(xs, y, '-')
+
+    plt.clf()
+    for key in ['w1', 'w2', 'w3']:
+        plot_weight(key)
+    plt.savefigure('{}P_weights.png'.format(percent))
+
 def run_mnist(P, gpu, *args):
     weights = initial_weights()
     train, test = chainer.datasets.get_mnist()
     model_p = 100
     to_plot = {}
     for i, p in enumerate(P + [0]):
+        plot_weights(weights, model_p)
         model = prepare(gpu, weights, model_p)
         acc, it, t = train_model(model, train, test, '', *args)
         dic = {}
