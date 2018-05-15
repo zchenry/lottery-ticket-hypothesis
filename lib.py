@@ -1,9 +1,15 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import pdb
+import time
 import chainer
 import argparse
 import numpy as np
 import chainer.links as L
 import chainer.functions as F
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 def pr(s, l=100):
     print(' ' * l, end='\r')
@@ -48,9 +54,8 @@ class MNIST(chainer.Chain):
             self.l2 = L.Linear(300, 100,
                                initialW=weights['w2'],
                                initial_bias=weights['b2'])
-            self.l3 = L.Linear(100, 10,
-                               initialW=weights['w3'],
-                               initial_bias=weights['b3'])
+            self.l3 = L.Linear(100, 10, nobias=True,
+                               initialW=weights['w3'])
             self.p = p
 
     def forward(self, x):
@@ -59,3 +64,17 @@ class MNIST(chainer.Chain):
     def loss(self, x, y):
         loss = F.softmax_cross_entropy(self.forward(x), y)
         return loss
+
+def tuple2array(data, xp):
+    xs = xp.array([d[0] for d in data], dtype=xp.float32)
+    ys = xp.array([d[1] for d in data])
+    return xs, ys
+
+def inits(d1, d2, xp, s='', mu=0., sigma=0.1):
+    samples = xp.random.normal(mu, sigma, d1 * d2)
+    outliers = xp.abs(samples) > sigma * 2
+    while outliers.any():
+        pr('{} {}/{} left'.format(s, sum(outliers), d1 * d2))
+        samples[outliers] = xp.random.normal(mu, sigma, sum(outliers))
+        outliers = xp.abs(samples) > sigma * 2
+    return samples.reshape((d2, d1))

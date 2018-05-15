@@ -77,6 +77,8 @@ def one_iter(H, gpu, strategy, *args):
             indices = np.argsort(importance)[::-1]
             weights['w1'] = weights['w1'][indices[:H[i + 1]]]
             weights['w2'] = weights['w2'][0][indices[:H[i + 1]]][None, :]
+            print(weights['w1'])
+            print(weights['w2'])
 
     return db, zl
 
@@ -88,7 +90,8 @@ def run_xor(H, I, *args):
         _db, _zl = one_iter(H, *args)
         db += _db
         zl += _zl
-        pr('Iter {}: DB: {}, ZL: {}'.format(i + 1, db, zl))
+        print('Iter {}: DB: {}, ZL: {}'.format(i + 1, db, zl))
+        print('')
 
     pr('')
     print('{} Iterations'.format(I))

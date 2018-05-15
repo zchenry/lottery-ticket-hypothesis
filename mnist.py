@@ -22,7 +22,6 @@ def initial_weights():
     weights['w2'] = inits(d2, d3, s + '.')
     weights['b2'] = np.zeros((100,))
     weights['w3'] = inits(d3, d4, s + '..')
-    weights['b3'] = np.zeros((1,))
     pr(' ')
     return weights
 
@@ -33,11 +32,6 @@ def prepare(gpu, weights, p):
         model.to_gpu()
     return model
 
-def tuple2array(ts, xp):
-    xs = xp.array([t[0] for t in ts])[:, :, None]
-    ys = xp.array([t[1] for t in ts])
-    return xs, ys
-
 def extract_weights(model):
     weights = {}
     weights['w1'] = model.l1.W.data[()]
@@ -45,7 +39,6 @@ def extract_weights(model):
     weights['w2'] = model.l2.W.data[()]
     weights['b2'] = model.l2.b.data[()]
     weights['w3'] = model.l3.W.data[()]
-    weights['b3'] = model.l3.b.data[()]
     return weights
 
 def reset_zeros(model, weights):
@@ -54,7 +47,6 @@ def reset_zeros(model, weights):
     model.l2.W.data[weights['w2'] == 0] = 0
     model.l2.b.data[weights['b2'] == 0] = 0
     model.l3.W.data[weights['w3'] == 0] = 0
-    model.l3.b.data[weights['b3'] == 0] = 0
     return model
 
 def map_zeros(_weights, weights):
@@ -63,7 +55,6 @@ def map_zeros(_weights, weights):
     _weights['w2'][weights['w2'] == 0] = 0
     _weights['b2'][weights['b2'] == 0] = 0
     _weights['w3'][weights['w3'] == 0] = 0
-    _weights['b3'][weights['b3'] == 0] = 0
     return _weights
 
 def train_model(model, train, test, s, I, minacc, patient):
@@ -93,7 +84,7 @@ def train_model(model, train, test, s, I, minacc, patient):
         acc = F.accuracy(model.forward(test_xs), test_ys)
         acc.to_cpu()
         acc = acc.data[()]
-        pr('{}{}%: ITER {}, TIME {:.2f}s, ACC {:.10f}'.format(
+        pr('{}{:.5}%: ITER {}, TIME {:.2f}s, ACC {:.10f}'.format(
             s, model.p, i, t, acc))
         if old_acc is None:
             old_acc = acc
@@ -105,12 +96,12 @@ def train_model(model, train, test, s, I, minacc, patient):
         its.append(i)
         if acc_diff < minacc:
             if p > patient:
-                break
+                pass
             else:
                 p += 1
         else:
             p = 0
-    print('{}{}%: ITER {}, TIME {:.2f}s, ACC {:.7f}'.format(
+    print('{}{:.5}%: ITER {}, TIME {:.2f}s, ACC {:.7f}'.format(
         s, model.p, i, t, acc))
     return accs, its, times
 
@@ -126,45 +117,66 @@ def prune(ws, p):
 def plot_weights(weights, percent):
     def plot_weight(key):
         data = weights[key]
-        data = np.extract(data != 0, data)
-        y, xs = np.histogram(data, bins=100)
+        ws = []
+        for di in range(data.shape[0]):
+            ws.append(np.sqrt(np.sum(data[di] ** 2)))
+        y, xs = np.histogram(ws, bins=100)
         xs = 0.5 * (xs[1:] + xs[:-1])
         plt.plot(xs, y, '-')
 
     plt.clf()
     for key in ['w1', 'w2', 'w3']:
         plot_weight(key)
-    plt.savefigure('{}P_weights.png'.format(percent))
+    plt.savefig('{}P_weights.png'.format(percent))
 
 def run_mnist(P, gpu, *args):
     weights = initial_weights()
     train, test = chainer.datasets.get_mnist()
-    model_p = 100
+    model_p = 100.
     to_plot = {}
     for i, p in enumerate(P + [0]):
-        plot_weights(weights, model_p)
         model = prepare(gpu, weights, model_p)
         acc, it, t = train_model(model, train, test, '', *args)
         dic = {}
         dic['accuracies'] = acc
         dic['iters'] = it
         dic['times'] = t
-        to_plot['{}%'.format(model_p)] = dic
+        to_plot['{:.5}%'.format(model_p)] = dic
 
-        if i > 0:
-            _weights = initial_weights()
-            _weights = map_zeros(_weights, weights)
-            _model = prepare(gpu, _weights, model_p)
-            cacc, cit, ct = train_model(_model, train,
-                                        test, 'Control: ', *args)
-            dic = {}
-            dic['accuracies'] = cacc
-            dic['iters'] = cit
-            dic['times'] = ct
-            to_plot['Control {}%'.format(model_p)] = dic
+        _weights = initial_weights()
+        _weights = map_zeros(_weights, weights)
+        w1 = _weights['w1']
+        out = sum(np.abs(w1).sum(1) > 0)
+        for wi in range(w1.shape[0]):
+            inn = sum(w1[wi] != 0)
+            rg = 0.7 * np.power(out, 1./inn)
+            if np.sum(w1[wi] ** 2) > 0:
+                w1[wi] *= rg / np.sqrt( np.sum(w1[wi] ** 2) )
+        _weights['w1'] = w1
+
+        w2 = _weights['w2']
+        out = sum(np.abs(w2).sum(1) > 0)
+        for wi in range(w2.shape[0]):
+            inn = sum(w2[wi] != 0)
+            rg = 0.7 * np.power(out, 1./inn)
+            if np.sum(w2[wi] ** 2) > 0:
+                w2[wi] *= rg / np.sqrt( np.sum(w2[wi] ** 2) )
+        _weights['w2'] = w2
+        _weights['b1'] = np.ones(_weights['b1'].shape)
+        _weights['b2'] = np.ones(_weights['b2'].shape)
+
+        plot_weights(_weights, model_p)
+        _model = prepare(gpu, _weights, model_p)
+        cacc, cit, ct = train_model(_model, train,
+                                    test, 'Control: ', *args)
+        dic = {}
+        dic['accuracies'] = cacc
+        dic['iters'] = cit
+        dic['times'] = ct
+        to_plot['Control {:.5}%'.format(model_p)] = dic
 
         if i < len(P):
-            model_p = int(model_p * (100 - p) / 100)
+            model_p = model_p * (100 - p) / 100
             weights['w1'] = prune(weights['w1'], p)
             weights['w2'] = prune(weights['w2'], p)
             weights['w3'] = prune(weights['w3'], p / 2)
@@ -190,7 +202,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--percent', nargs='+', type=int, default=[45, 45])
     parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--iter', type=int, default=50000)
+    parser.add_argument('--iter', type=int, default=1000)
     parser.add_argument('--minacc', type=float, default=1e-3)
     parser.add_argument('--patient', type=int, default=3)
     args = parser.parse_args()
