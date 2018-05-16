@@ -41,6 +41,30 @@ def extract_weights(model):
     weights['w3'] = model.l3.W.data[()]
     return weights
 
+def shuffle_weight(w):
+    _w = w
+    if len(w.shape) == 1:
+        iss = np.nonzero(w)[0]
+        if len(iss) > 0:
+            _extract = np.extract(w != 0, w)
+            np.random.shuffle(_extract)
+            for idx in range(len(iss)):
+                _w[ iss[idx] ] = _extract[idx]
+    else:
+        iss, jss = np.nonzero(w)
+        if len(iss) > 0:
+            _extract = np.extract(w != 0, w)
+            np.random.shuffle(_extract)
+            for idx in range(len(iss)):
+                _w[ iss[idx], jss[idx] ] = _extract[idx]
+    return _w
+
+def shuffle_weights(weights):
+    ws = {}
+    for key in weights.keys():
+        ws[key] = shuffle_weight(weights[key])
+    return ws
+
 def reset_zeros(model, weights):
     model.l1.W.data[weights['w1'] == 0] = 0
     model.l1.b.data[weights['b1'] == 0] = 0
@@ -136,12 +160,22 @@ def run_mnist(P, gpu, *args):
     to_plot = {}
     for i, p in enumerate(P + [0]):
         model = prepare(gpu, weights, model_p)
-        acc, it, t = train_model(model, train, test, '', *args)
+        acc, it, t = train_model(model, train, test, 'Prune: ', *args)
         dic = {}
         dic['accuracies'] = acc
         dic['iters'] = it
         dic['times'] = t
-        to_plot['{:.5}%'.format(model_p)] = dic
+        to_plot['Prun: {:.5}%'.format(model_p)] = dic
+
+        _weights = shuffle_weights(weights)
+        _model = prepare(gpu, _weights, model_p)
+        cacc, cit, ct = train_model(_model, train,
+                                    test, 'Shuffle: ', *args)
+        dic = {}
+        dic['accuracies'] = cacc
+        dic['iters'] = cit
+        dic['times'] = ct
+        to_plot['Shuffle {:.5}%'.format(model_p)] = dic
 
         _weights = initial_weights()
         _weights = map_zeros(_weights, weights)
@@ -165,15 +199,14 @@ def run_mnist(P, gpu, *args):
         _weights['b1'] = np.ones(_weights['b1'].shape)
         _weights['b2'] = np.ones(_weights['b2'].shape)
 
-        plot_weights(_weights, model_p)
         _model = prepare(gpu, _weights, model_p)
         cacc, cit, ct = train_model(_model, train,
-                                    test, 'Control: ', *args)
+                                    test, 'My: ', *args)
         dic = {}
         dic['accuracies'] = cacc
         dic['iters'] = cit
         dic['times'] = ct
-        to_plot['Control {:.5}%'.format(model_p)] = dic
+        to_plot['My {:.5}%'.format(model_p)] = dic
 
         if i < len(P):
             model_p = model_p * (100 - p) / 100
@@ -200,7 +233,7 @@ def run_mnist(P, gpu, *args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--percent', nargs='+', type=int, default=[45, 45])
+    parser.add_argument('--percent', nargs='+', type=int, default=[85, 85])
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--iter', type=int, default=1000)
     parser.add_argument('--minacc', type=float, default=1e-3)
