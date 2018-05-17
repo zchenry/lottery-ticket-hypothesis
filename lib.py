@@ -78,3 +78,8 @@ def inits(d1, d2, xp, s='', mu=0., sigma=0.1):
         samples[outliers] = xp.random.normal(mu, sigma, sum(outliers))
         outliers = xp.abs(samples) > sigma * 2
     return samples.reshape((d2, d1))
+
+def mesh_inputs(*args):
+    ls = np.linspace(*args)
+    xs, ys = np.meshgrid(ls, ls)
+    return xs, ys, np.append(xs.reshape([-1, 1]), ys.reshape([-1, 1]), 1).astype(np.float32)

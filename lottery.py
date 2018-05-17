@@ -167,46 +167,48 @@ def run_mnist(P, gpu, *args):
         dic['times'] = t
         to_plot['Prun: {:.5}%'.format(model_p)] = dic
 
-        _weights = shuffle_weights(weights)
-        _model = prepare(gpu, _weights, model_p)
-        cacc, cit, ct = train_model(_model, train,
-                                    test, 'Shuffle: ', *args)
-        dic = {}
-        dic['accuracies'] = cacc
-        dic['iters'] = cit
-        dic['times'] = ct
-        to_plot['Shuffle {:.5}%'.format(model_p)] = dic
+        if i > 0:
+            _weights = shuffle_weights(weights)
+            _model = prepare(gpu, _weights, model_p)
+            cacc, cit, ct = train_model(_model, train,
+                                        test, 'Shuffle: ', *args)
+            dic = {}
+            dic['accuracies'] = cacc
+            dic['iters'] = cit
+            dic['times'] = ct
+            to_plot['Shuffle {:.5}%'.format(model_p)] = dic
 
-        _weights = initial_weights()
-        _weights = map_zeros(_weights, weights)
-        w1 = _weights['w1']
-        out = sum(np.abs(w1).sum(1) > 0)
-        for wi in range(w1.shape[0]):
-            inn = sum(w1[wi] != 0)
-            rg = 0.7 * np.power(out, 1./inn)
-            if np.sum(w1[wi] ** 2) > 0:
-                w1[wi] *= rg / np.sqrt( np.sum(w1[wi] ** 2) )
-        _weights['w1'] = w1
+            _weights = initial_weights()
+            _weights = map_zeros(_weights, weights)
+            '''
+            w1 = _weights['w1']
+            out = sum(np.abs(w1).sum(1) > 0)
+            for wi in range(w1.shape[0]):
+                inn = sum(w1[wi] != 0)
+                rg = 0.7 * np.power(out, 1./inn)
+                if np.sum(w1[wi] ** 2) > 0:
+                    w1[wi] *= rg / np.sqrt( np.sum(w1[wi] ** 2) )
+            _weights['w1'] = w1
 
-        w2 = _weights['w2']
-        out = sum(np.abs(w2).sum(1) > 0)
-        for wi in range(w2.shape[0]):
-            inn = sum(w2[wi] != 0)
-            rg = 0.7 * np.power(out, 1./inn)
-            if np.sum(w2[wi] ** 2) > 0:
-                w2[wi] *= rg / np.sqrt( np.sum(w2[wi] ** 2) )
-        _weights['w2'] = w2
-        _weights['b1'] = np.ones(_weights['b1'].shape)
-        _weights['b2'] = np.ones(_weights['b2'].shape)
-
-        _model = prepare(gpu, _weights, model_p)
-        cacc, cit, ct = train_model(_model, train,
-                                    test, 'My: ', *args)
-        dic = {}
-        dic['accuracies'] = cacc
-        dic['iters'] = cit
-        dic['times'] = ct
-        to_plot['My {:.5}%'.format(model_p)] = dic
+            w2 = _weights['w2']
+            out = sum(np.abs(w2).sum(1) > 0)
+            for wi in range(w2.shape[0]):
+                inn = sum(w2[wi] != 0)
+                rg = 0.7 * np.power(out, 1./inn)
+                if np.sum(w2[wi] ** 2) > 0:
+                    w2[wi] *= rg / np.sqrt( np.sum(w2[wi] ** 2) )
+            _weights['w2'] = w2
+            _weights['b1'] = np.ones(_weights['b1'].shape)
+            _weights['b2'] = np.ones(_weights['b2'].shape)
+            '''
+            _model = prepare(gpu, _weights, model_p)
+            cacc, cit, ct = train_model(_model, train,
+                                        test, 'Normal: ', *args)
+            dic = {}
+            dic['accuracies'] = cacc
+            dic['iters'] = cit
+            dic['times'] = ct
+            to_plot['Normal {:.5}%'.format(model_p)] = dic
 
         if i < len(P):
             model_p = model_p * (100 - p) / 100
