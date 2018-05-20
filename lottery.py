@@ -81,53 +81,42 @@ def map_zeros(_weights, weights):
     _weights['w3'][weights['w3'] == 0] = 0
     return _weights
 
-def train_model(model, train, test, s, I, minacc, patient):
+def train_model(model, train, test_xs, test_ys, s, epochs):
     optimizer = chainer.optimizers.SGD(0.05)
     optimizer.setup(model)
     weights = extract_weights(model)
     train_iter = chainer.iterators.SerialIterator(train, 100)
-    test_xs, test_ys = tuple2array(test, model.xp)
 
-    old_acc = None
-    acc_diff = 100
-    p = 0
-    t = 0
-    times = []
-    accs = []
-    its = []
-    train_xs, train_ys = tuple2array(train_iter.next(), model.xp)
-    for i in range(I):
-        start_time = time.time()
+    accs, its, ts, tes = [], [], [], []
+    for epoch in range(epochs):
+        train_xs, train_ys = tuple2array(train_iter.next(), model.xp)
         loss = model.loss(train_xs, train_ys)
         model.cleargrads()
         loss.backward()
         optimizer.update()
         model = reset_zeros(model, weights)
-        t += time.time() - start_time
 
-        acc = F.accuracy(model.forward(test_xs), test_ys)
+        idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
+        pred, hiddens_gpu = model.forward(test_xs[idx], keep_val=True)
+        acc = F.accuracy(pred, test_ys[idx])
         acc.to_cpu()
         acc = acc.data[()]
-        pr('{}{:.5}%: ITER {}, TIME {:.2f}s, ACC {:.10f}'.format(
-            s, model.p, i, t, acc))
-        if old_acc is None:
-            old_acc = acc
-        else:
-            acc_diff = np.abs(old_acc - acc)
-            old_acc = acc
+        pr('{}{:.5}%: EPOCH {}, ACC {:.10f}'.format(
+            s, model.p, epoch, acc))
         accs.append(acc)
-        times.append(t)
-        its.append(i)
-        if acc_diff < minacc:
-            if p > patient:
-                pass
-            else:
-                p += 1
-        else:
-            p = 0
-    print('{}{:.5}%: ITER {}, TIME {:.2f}s, ACC {:.7f}'.format(
-        s, model.p, i, t, acc))
-    return accs, its, times
+        its.append(epoch)
+
+        if (epoch + 1) % 10 == 0:
+            hiddens = []
+            for hidden in hiddens_gpu:
+                hidden.to_cpu()
+                hiddens.append(hidden.data[()])
+            ts.append(hiddens)
+            tes.append(epoch)
+
+    print('{}{:.5}%: EPOCH {}, ACC {:.7f}'.format(
+        s, model.p, epoch, acc))
+    return accs, its, ts, tes
 
 def prune(ws, p):
     d1 = ws.shape[0]
@@ -153,62 +142,88 @@ def plot_weights(weights, percent):
         plot_weight(key)
     plt.savefig('{}P_weights.png'.format(percent))
 
-def run_mnist(P, gpu, *args):
+def plot_points(points, es, feature):
+    pr('Plotting {}...'.format(feature))
+    _xs = np.array([p['ixt'] for p in points])
+    _ys = np.array([p['ity'] for p in points])
+    _ls = np.array([p['layer'] for p in points])
+
+    plt.clf()
+    for l in range(2):
+        mask = _ls == l
+        plt.plot(es, _xs[mask], label=str(l))
+    plt.legend()
+    plt.savefig('{}_x.png'.format(feature))
+
+    plt.clf()
+    for l in range(2):
+        mask = _ls == l
+        plt.plot(es, _ys[mask], label=str(l))
+    plt.legend()
+    plt.savefig('{}_y.png'.format(feature))
+
+def run_mnist(P, gpu, epochs):
     weights = initial_weights()
     train, test = chainer.datasets.get_mnist()
     model_p = 100.
     to_plot = {}
+    bins = np.linspace(-1, 1, 30)
+    if gpu >= 0:
+        import cupy as xp
+    else: xp = np
+    test_xs, test_ys = tuple2array(test, xp)
     for i, p in enumerate(P + [0]):
         model = prepare(gpu, weights, model_p)
-        acc, it, t = train_model(model, train, test, 'Prune: ', *args)
+        acc, it, ts, tes = train_model(model, train, test_xs, test_ys, 'Prune: ', epochs)
         dic = {}
         dic['accuracies'] = acc
         dic['iters'] = it
-        dic['times'] = t
         to_plot['Prun: {:.5}%'.format(model_p)] = dic
+
+        cxs = to_cpu(test_xs)
+        cys = to_cpu(test_ys)[:, None]
+
+        idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
+        idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
+        hsic_points = calc_hsics(cxs[idx], cys[idy], ts)
+        plot_points(hsic_points, tes, 'l_prun_{}_hsic'.format(model_p))
+        mi_points = calc_mi(cxs[idx], cys[idy], ts, bins)
+        plot_points(mi_points, tes, 'l_prun_{}_mi'.format(model_p))
 
         if i > 0:
             _weights = shuffle_weights(weights)
             _model = prepare(gpu, _weights, model_p)
-            cacc, cit, ct = train_model(_model, train,
-                                        test, 'Shuffle: ', *args)
+            cacc, cit,  cts, ctes = train_model(_model, train,
+                                        test_xs, test_ys, 'Shuffle: ', epochs)
             dic = {}
             dic['accuracies'] = cacc
             dic['iters'] = cit
-            dic['times'] = ct
             to_plot['Shuffle {:.5}%'.format(model_p)] = dic
+
+            idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
+            idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
+            hsic_points = calc_hsics(cxs[idx], cys[idy], cts)
+            plot_points(hsic_points, ctes, 'l_shuffle_{}_hsic'.format(model_p))
+            mi_points = calc_mi(cxs[idx], cys[idy], cts, bins)
+            plot_points(mi_points, ctes, 'l_shuffle_{}_mi'.format(model_p))
 
             _weights = initial_weights()
             _weights = map_zeros(_weights, weights)
-            '''
-            w1 = _weights['w1']
-            out = sum(np.abs(w1).sum(1) > 0)
-            for wi in range(w1.shape[0]):
-                inn = sum(w1[wi] != 0)
-                rg = 0.7 * np.power(out, 1./inn)
-                if np.sum(w1[wi] ** 2) > 0:
-                    w1[wi] *= rg / np.sqrt( np.sum(w1[wi] ** 2) )
-            _weights['w1'] = w1
 
-            w2 = _weights['w2']
-            out = sum(np.abs(w2).sum(1) > 0)
-            for wi in range(w2.shape[0]):
-                inn = sum(w2[wi] != 0)
-                rg = 0.7 * np.power(out, 1./inn)
-                if np.sum(w2[wi] ** 2) > 0:
-                    w2[wi] *= rg / np.sqrt( np.sum(w2[wi] ** 2) )
-            _weights['w2'] = w2
-            _weights['b1'] = np.ones(_weights['b1'].shape)
-            _weights['b2'] = np.ones(_weights['b2'].shape)
-            '''
             _model = prepare(gpu, _weights, model_p)
-            cacc, cit, ct = train_model(_model, train,
-                                        test, 'Normal: ', *args)
+            cacc, cit,  cts, ctes = train_model(_model, train,
+                                        test_xs, test_ys, 'Normal: ', epochs)
             dic = {}
             dic['accuracies'] = cacc
             dic['iters'] = cit
-            dic['times'] = ct
             to_plot['Normal {:.5}%'.format(model_p)] = dic
+
+            idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
+            idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
+            hsic_points = calc_hsics(cxs[idx], cys[idy], cts)
+            plot_points(hsic_points, ctes, 'l_normal_{}_hsic'.format(model_p))
+            mi_points = calc_mi(cxs[idx], cys[idy], cts, bins)
+            plot_points(mi_points, ctes, 'l_normal_{}_mi'.format(model_p))
 
         if i < len(P):
             model_p = model_p * (100 - p) / 100
@@ -218,28 +233,18 @@ def run_mnist(P, gpu, *args):
 
     plt.clf()
     for key, value in to_plot.items():
-        plt.plot(value['times'], value['accuracies'], label=key)
-    plt.legend()
-    plt.xlabel('Wall Clock Time (s)')
-    plt.ylabel('Accuracy')
-    plt.savefig('time-accuracy.png')
-
-    plt.clf()
-    for key, value in to_plot.items():
         plt.plot(value['iters'], value['accuracies'], label=key)
     plt.legend()
-    plt.xlabel('Iterations')
+    plt.xlabel('Epochs')
     plt.ylabel('Accuracy')
     plt.savefig('iter-accuracy.png')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--percent', nargs='+', type=int, default=[85, 85])
+    parser.add_argument('--percent', nargs='+', type=int, default=[])
     parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--iter', type=int, default=1000)
-    parser.add_argument('--minacc', type=float, default=1e-3)
-    parser.add_argument('--patient', type=int, default=3)
+    parser.add_argument('--epoch', type=int, default=1000)
     args = parser.parse_args()
 
-    run_mnist(args.percent, args.gpu, args.iter, args.minacc, args.patient)
+    run_mnist(args.percent, args.gpu, args.epoch)
