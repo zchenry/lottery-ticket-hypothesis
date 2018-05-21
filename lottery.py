@@ -162,7 +162,7 @@ def plot_points(points, es, feature):
     plt.legend()
     plt.savefig('{}_y.png'.format(feature))
 
-def run_mnist(P, gpu, epochs):
+def run_mnist(P, gpu, epochs, analysis):
     weights = initial_weights()
     train, test = chainer.datasets.get_mnist()
     model_p = 100.
@@ -171,10 +171,14 @@ def run_mnist(P, gpu, epochs):
     if gpu >= 0:
         import cupy as xp
     else: xp = np
+    if analysis >= 0:
+        import multiprocessing
+        from joblib import Parallel, delayed
     test_xs, test_ys = tuple2array(test, xp)
     for i, p in enumerate(P + [0]):
         model = prepare(gpu, weights, model_p)
-        acc, it, ts, tes = train_model(model, train, test_xs, test_ys, 'Prune: ', epochs)
+        acc, it, ts, tes = train_model(model, train, test_xs,
+                                       test_ys, 'Prune: ', epochs)
         dic = {}
         dic['accuracies'] = acc
         dic['iters'] = it
@@ -183,12 +187,13 @@ def run_mnist(P, gpu, epochs):
         cxs = to_cpu(test_xs)
         cys = to_cpu(test_ys)[:, None]
 
-        idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
-        idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
-        hsic_points = calc_hsics(cxs[idx], cys[idy], ts)
-        plot_points(hsic_points, tes, 'l_prun_{}_hsic'.format(model_p))
-        mi_points = calc_mi(cxs[idx], cys[idy], ts, bins)
-        plot_points(mi_points, tes, 'l_prun_{}_mi'.format(model_p))
+        if analysis >= 0:
+            idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
+            idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
+            hsic_points = calc_hsics(cxs[idx], cys[idy], ts)
+            plot_points(hsic_points, tes, 'l_prun_{}_hsic'.format(model_p))
+            mi_points = calc_mi(cxs[idx], cys[idy], ts, bins)
+            plot_points(mi_points, tes, 'l_prun_{}_mi'.format(model_p))
 
         if i > 0:
             _weights = shuffle_weights(weights)
@@ -200,12 +205,14 @@ def run_mnist(P, gpu, epochs):
             dic['iters'] = cit
             to_plot['Shuffle {:.5}%'.format(model_p)] = dic
 
-            idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
-            idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
-            hsic_points = calc_hsics(cxs[idx], cys[idy], cts)
-            plot_points(hsic_points, ctes, 'l_shuffle_{}_hsic'.format(model_p))
-            mi_points = calc_mi(cxs[idx], cys[idy], cts, bins)
-            plot_points(mi_points, ctes, 'l_shuffle_{}_mi'.format(model_p))
+            if analysis >= 0:
+                idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
+                idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
+                hsic_points = calc_hsics(cxs[idx], cys[idy], cts)
+                plot_points(hsic_points, ctes,
+                            'l_shuffle_{}_hsic'.format(model_p))
+                mi_points = calc_mi(cxs[idx], cys[idy], cts, bins)
+                plot_points(mi_points, ctes, 'l_shuffle_{}_mi'.format(model_p))
 
             _weights = initial_weights()
             _weights = map_zeros(_weights, weights)
@@ -218,12 +225,14 @@ def run_mnist(P, gpu, epochs):
             dic['iters'] = cit
             to_plot['Normal {:.5}%'.format(model_p)] = dic
 
-            idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
-            idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
-            hsic_points = calc_hsics(cxs[idx], cys[idy], cts)
-            plot_points(hsic_points, ctes, 'l_normal_{}_hsic'.format(model_p))
-            mi_points = calc_mi(cxs[idx], cys[idy], cts, bins)
-            plot_points(mi_points, ctes, 'l_normal_{}_mi'.format(model_p))
+            if analysis >= 0:
+                idx = (np.random.rand(1000) * len(test_xs)).astype(np.int)
+                idy = (np.random.rand(1000) * len(test_ys)).astype(np.int)
+                hsic_points = calc_hsics(cxs[idx], cys[idy], cts)
+                plot_points(hsic_points, ctes,
+                            'l_normal_{}_hsic'.format(model_p))
+                mi_points = calc_mi(cxs[idx], cys[idy], cts, bins)
+                plot_points(mi_points, ctes, 'l_normal_{}_mi'.format(model_p))
 
         if i < len(P):
             model_p = model_p * (100 - p) / 100
@@ -245,6 +254,7 @@ if __name__ == '__main__':
     parser.add_argument('--percent', nargs='+', type=int, default=[])
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--epoch', type=int, default=1000)
+    parser.add_argument('--analyse', type=int, default=-1)
     args = parser.parse_args()
 
-    run_mnist(args.percent, args.gpu, args.epoch)
+    run_mnist(args.percent, args.gpu, args.epoch, args.analyse)

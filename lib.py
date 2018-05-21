@@ -13,8 +13,6 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import pdist, squareform
 from sklearn.metrics.pairwise import rbf_kernel
-import multiprocessing
-from joblib import Parallel, delayed
 
 def pr(s, l=100):
     print(' ' * l, end='\r')
